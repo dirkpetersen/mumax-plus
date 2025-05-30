@@ -26,3 +26,9 @@ add_subdirectory(src/core)
 add_subdirectory(src/cudautil)
 add_subdirectory(src/linsolver)
 add_subdirectory(src/physics)
+
+# Enable multi-GPU support
+option(ENABLE_MULTIGPU "Enable multi-GPU support via NVLink" ON)
+if(ENABLE_MULTIGPU)
+    add_definitions(-DENABLE_MULTIGPU)
+endif()
