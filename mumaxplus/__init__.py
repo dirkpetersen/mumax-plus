@@ -16,6 +16,23 @@ from .variable import Variable
 from .world import World
 from . import util
 
+# Import multi-GPU functionality
+try:
+    from _mumaxpluscpp import multigpu
+except ImportError:
+    # Multi-GPU support not available
+    class DummyMultiGpu:
+        @staticmethod
+        def is_enabled():
+            return False
+        @staticmethod
+        def initialize():
+            pass
+        @staticmethod
+        def set_enabled(enabled):
+            pass
+    multigpu = DummyMultiGpu()
+
 __all__ = [
     "_cpp",
     "Antiferromagnet",
@@ -31,4 +48,5 @@ __all__ = [
     "World",
     "PoissonSystem",
     "util",
+    "multigpu",
 ]

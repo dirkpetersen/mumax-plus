@@ -80,7 +80,7 @@ setup(
     description="Finite difference micromagnetic solver",
     long_description="",
     packages=find_packages(include=["mumaxplus", "mumaxplus.*"]),
-    ext_modules=[CMakeExtension("_mumaxpluscpp")],
+    ext_modules=[CMakeExtension("mumaxplus._mumaxpluscpp")],
     cmdclass=dict(build_ext=CMakeBuild),
     install_requires=["numpy", "matplotlib"],
     zip_safe=False,

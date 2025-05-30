@@ -110,5 +110,10 @@ void wrap_world(py::module& m) {
                     &MumaxWorld::setMastergrid, "mastergrid of the world")
       .def_property("pbc_repetitions", &MumaxWorld::pbcRepetitions,
                     &MumaxWorld::setPbcRepetitions, "PBC repetitions of the world")
+      .def("enable_multi_gpu", &MumaxWorld::enableMultiGpu,
+           py::arg("enable") = true,
+           "Enable or disable multi-GPU support")
+      .def("is_multi_gpu_enabled", &MumaxWorld::isMultiGpuEnabled,
+           "Check if multi-GPU support is enabled")
      ;
 }
