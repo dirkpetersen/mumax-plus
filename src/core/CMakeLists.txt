@@ -16,6 +16,8 @@ add_library(core STATIC
     grid.hpp
     inter_parameter.cu
     inter_parameter.hpp
+    multigpu.cu
+    multigpu.hpp
     parameter.cu
     parameter.hpp
     reduce.cu
