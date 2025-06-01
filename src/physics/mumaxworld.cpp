@@ -13,6 +13,7 @@
 #include "grid.hpp"
 #include "magnet.hpp"
 #include "minimizer.hpp"
+#include "multigpu.hpp"
 #include "relaxer.hpp"
 #include "system.hpp"
 #include "thermalnoise.hpp"
@@ -213,6 +214,14 @@ void MumaxWorld::relax(real tol) {
   relaxer.exec();
 }
 
+
+void MumaxWorld::enableMultiGpu(bool enable) {
+  MultiGpu::setMultiGpuEnabled(enable);
+}
+
+bool MumaxWorld::isMultiGpuEnabled() const {
+  return MultiGpu::isMultiGpuEnabled();
+}
 
 // --------------------------------------------------
 // PBC

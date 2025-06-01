@@ -186,6 +186,12 @@ class MumaxWorld : public World {
    */
   void unsetPBC();
 
+  /** Enable or disable multi-GPU support. */
+  void enableMultiGpu(bool enable = true);
+  
+  /** Check if multi-GPU support is enabled. */
+  bool isMultiGpuEnabled() const;
+
   // --------------------------------------------------
 
 
