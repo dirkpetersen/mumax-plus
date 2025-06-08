@@ -1,7 +1,10 @@
 #include <cufft.h>
+#include <cufftXt.h>
 
 #include <memory>
 #include <vector>
+#include <iostream>
+#include <algorithm>
 
 #include "antiferromagnet.hpp"
 #include "constants.hpp"
@@ -16,6 +19,7 @@
 #include "strayfieldfft.hpp"
 #include "strayfieldkernel.hpp"
 #include "system.hpp"
+#include "../cudautil/deviceutils.hpp"
 
 #if FP_PRECISION == SINGLE
 const cufftType FFT = CUFFT_R2C;
@@ -148,12 +152,16 @@ __global__ void k_apply_kernel_2d(complex* hx,
 
 StrayFieldFFTExecutor::StrayFieldFFTExecutor(
     const Magnet* magnet,
-    std::shared_ptr<const System> system)
+    std::shared_ptr<const System> system,
+    bool use_multi_gpu)
     : StrayFieldExecutor(magnet, system),
       kernel_(system->grid(), magnet_->grid(), magnet->world()),
       kfft(6),
       hfft(3),
-      mfft(3) {
+      mfft(3),
+      use_multi_gpu_(use_multi_gpu),
+      gpu_count_(0),
+      is_multi_gpu_enabled_(false) {
   int3 size = kernel_.grid().size();
   fftSize = {size.x / 2 + 1, size.y, size.z};
   int ncells = fftSize.x * fftSize.y * fftSize.z;
@@ -164,16 +172,117 @@ StrayFieldFFTExecutor::StrayFieldFFTExecutor(
     cudaMallocManaged(reinterpret_cast<void**>(&p), ncells * sizeof(complex), cudaMemAttachGlobal);
   for (auto& p : hfft)
     cudaMallocManaged(reinterpret_cast<void**>(&p), ncells * sizeof(complex), cudaMemAttachGlobal);
+  
+  // Determine if we should use multi-GPU mode
+  is_multi_gpu_enabled_ = false;
+  gpu_count_ = DeviceUtils::getDeviceCount();
+  
+  if (use_multi_gpu_ && gpu_count_ > 1) {
+    // Get available GPU IDs (just use all available GPUs for now)
+    gpu_ids_.resize(gpu_count_);
+    for (int i = 0; i < gpu_count_; ++i) {
+      gpu_ids_[i] = i;
+    }
+    
+    // Try to enable peer access between GPUs for better performance
+    DeviceUtils::enablePeerAccess();
+    
+    // Create multi-GPU plan using cuFFT's multi-GPU functionality
+    try {
+      // Set up which GPUs to use for the plan
+      checkCufftResult(cufftXtSetGPUs(FFT, gpu_count_, gpu_ids_.data()));
+      
+      // Create the multi-GPU forward plan with work area
+      size_t workSize[1];
+      checkCufftResult(cufftEstimate3d(size.z, size.y, size.x, FFT, workSize));
+      
+      // Make the multi-GPU plans
+      checkCufftResult(cufftXtMakePlanMany(
+          &forwardPlan, 3,                       // 3D transform
+          reinterpret_cast<long long*>(&size),   // sizes
+          nullptr,                               // inembed
+          1,                                     // istride
+          1,                                     // idist
+          CUDA_R,                                // input type
+          nullptr,                               // onembed
+          1,                                     // ostride
+          1,                                     // odist
+          CUDA_C,                                // output type
+          1,                                     // batch count
+          workSize,                              // work size
+          CUDA_C                                 // execution type
+      ));
+      
+      checkCufftResult(cufftXtSetGPUs(IFFT, gpu_count_, gpu_ids_.data()));
+      
+      checkCufftResult(cufftEstimate3d(size.z, size.y, size.x, IFFT, workSize));
+      
+      checkCufftResult(cufftXtMakePlanMany(
+          &backwardPlan, 3,                      // 3D transform
+          reinterpret_cast<long long*>(&size),   // sizes
+          nullptr,                               // inembed
+          1,                                     // istride
+          1,                                     // idist
+          CUDA_C,                                // input type
+          nullptr,                               // onembed
+          1,                                     // ostride
+          1,                                     // odist
+          CUDA_R,                                // output type
+          1,                                     // batch count
+          workSize,                              // work size
+          CUDA_C                                 // execution type
+      ));
+      
+      // Set the stream for all GPUs
+      for (int i = 0; i < gpu_count_; ++i) {
+        cudaSetDevice(gpu_ids_[i]);
+        cufftSetStream(forwardPlan, getCudaStream());
+        cufftSetStream(backwardPlan, getCudaStream());
+      }
+      
+      // Set back to device 0 for other operations
+      cudaSetDevice(0);
+      
+      is_multi_gpu_enabled_ = true;
+      std::cout << "Multi-GPU cuFFT enabled with " << gpu_count_ << " GPUs" << std::endl;
+    } catch (const std::exception& e) {
+      std::cerr << "Failed to create multi-GPU cuFFT plan: " << e.what() << std::endl;
+      std::cerr << "Falling back to single-GPU mode" << std::endl;
+      is_multi_gpu_enabled_ = false;
+    }
+  }
+  
+  // If multi-GPU failed or was not requested, create regular plans
+  if (!is_multi_gpu_enabled_) {
+    checkCufftResult(cufftPlan3d(&forwardPlan, size.z, size.y, size.x, FFT));
+    checkCufftResult(cufftPlan3d(&backwardPlan, size.z, size.y, size.x, IFFT));
+    
+    cufftSetStream(forwardPlan, getCudaStream());
+    cufftSetStream(backwardPlan, getCudaStream());
+  }
 
-  checkCufftResult(cufftPlan3d(&forwardPlan, size.z, size.y, size.x, FFT));
-  checkCufftResult(cufftPlan3d(&backwardPlan, size.z, size.y, size.x, IFFT));
-
-  cufftSetStream(forwardPlan, getCudaStream());
-  cufftSetStream(backwardPlan, getCudaStream());
-
-  for (int comp = 0; comp < 6; comp++)
-    checkCufftResult(
-        fftExec(forwardPlan, kernel_.field().device_ptr(comp), kfft.at(comp)));
+  if (is_multi_gpu_enabled_) {
+    // For multi-GPU FFT, we need to use cufftXtExec instead of the convenience wrappers
+    for (int comp = 0; comp < 6; comp++) {
+      // Copy kernel field to managed memory first for multi-GPU access
+      #if FP_PRECISION == SINGLE
+        checkCufftResult(cufftXtExecDescriptor(forwardPlan, 
+                                             kernel_.field().device_ptr(comp), 
+                                             kfft.at(comp),
+                                             CUFFT_FORWARD));
+      #elif FP_PRECISION == DOUBLE
+        checkCufftResult(cufftXtExecDescriptor(forwardPlan, 
+                                             kernel_.field().device_ptr(comp), 
+                                             kfft.at(comp),
+                                             CUFFT_FORWARD));
+      #endif
+    }
+  } else {
+    // Regular single-GPU execution
+    for (int comp = 0; comp < 6; comp++)
+      checkCufftResult(
+          fftExec(forwardPlan, kernel_.field().device_ptr(comp), kfft.at(comp)));
+  }
 }
 
 StrayFieldFFTExecutor::~StrayFieldFFTExecutor() {
@@ -213,9 +322,27 @@ Field StrayFieldFFTExecutor::exec() const {
   }
 
   // Forward fourier transforms
-  for (int comp = 0; comp < 3; comp++)
-    checkCufftResult(
-        fftExec(forwardPlan, mpad->device_ptr(comp), mfft.at(comp)));
+  if (is_multi_gpu_enabled_) {
+    // Multi-GPU execution using cufftXtExec
+    for (int comp = 0; comp < 3; comp++) {
+      #if FP_PRECISION == SINGLE
+        checkCufftResult(cufftXtExecDescriptor(forwardPlan, 
+                                            mpad->device_ptr(comp), 
+                                            mfft.at(comp),
+                                            CUFFT_FORWARD));
+      #elif FP_PRECISION == DOUBLE
+        checkCufftResult(cufftXtExecDescriptor(forwardPlan, 
+                                            mpad->device_ptr(comp), 
+                                            mfft.at(comp),
+                                            CUFFT_FORWARD));
+      #endif
+    }
+  } else {
+    // Regular single-GPU execution
+    for (int comp = 0; comp < 3; comp++)
+      checkCufftResult(
+          fftExec(forwardPlan, mpad->device_ptr(comp), mfft.at(comp)));
+  }
   
   // apply kernel on m_fft
   int ncells = fftSize.x * fftSize.y * fftSize.z;
@@ -235,9 +362,27 @@ Field StrayFieldFFTExecutor::exec() const {
   }
 
   // backward fourier transfrom
-  for (int comp = 0; comp < 3; comp++)
-    checkCufftResult(
-      ifftExec(backwardPlan, hfft.at(comp), mpad->device_ptr(comp)));
+  if (is_multi_gpu_enabled_) {
+    // Multi-GPU execution for inverse transform
+    for (int comp = 0; comp < 3; comp++) {
+      #if FP_PRECISION == SINGLE
+        checkCufftResult(cufftXtExecDescriptor(backwardPlan, 
+                                          hfft.at(comp), 
+                                          mpad->device_ptr(comp),
+                                          CUFFT_INVERSE));
+      #elif FP_PRECISION == DOUBLE
+        checkCufftResult(cufftXtExecDescriptor(backwardPlan, 
+                                          hfft.at(comp), 
+                                          mpad->device_ptr(comp),
+                                          CUFFT_INVERSE));
+      #endif
+    }
+  } else {
+    // Regular single-GPU execution
+    for (int comp = 0; comp < 3; comp++)
+      checkCufftResult(
+        ifftExec(backwardPlan, hfft.at(comp), mpad->device_ptr(comp)));
+  }
 
   // unpad
   Field h(system_, 3);
