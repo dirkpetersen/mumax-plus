@@ -159,11 +159,11 @@ StrayFieldFFTExecutor::StrayFieldFFTExecutor(
   int ncells = fftSize.x * fftSize.y * fftSize.z;
 
   for (auto& p : kfft)
-    cudaMalloc(reinterpret_cast<void**>(&p), ncells * sizeof(complex));
+    cudaMallocManaged(reinterpret_cast<void**>(&p), ncells * sizeof(complex), cudaMemAttachGlobal);
   for (auto& p : mfft)
-    cudaMalloc(reinterpret_cast<void**>(&p), ncells * sizeof(complex));
+    cudaMallocManaged(reinterpret_cast<void**>(&p), ncells * sizeof(complex), cudaMemAttachGlobal);
   for (auto& p : hfft)
-    cudaMalloc(reinterpret_cast<void**>(&p), ncells * sizeof(complex));
+    cudaMallocManaged(reinterpret_cast<void**>(&p), ncells * sizeof(complex), cudaMemAttachGlobal);
 
   checkCufftResult(cufftPlan3d(&forwardPlan, size.z, size.y, size.x, FFT));
   checkCufftResult(cufftPlan3d(&backwardPlan, size.z, size.y, size.x, IFFT));

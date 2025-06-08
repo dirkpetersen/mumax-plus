@@ -21,7 +21,8 @@ GpuMemoryPool::~GpuMemoryPool() {
 void* GpuMemoryPool::allocate(size_t size) {
   void* ptr;
   if (pool_[size].size() == 0) {
-    checkCudaError(cudaMalloc(reinterpret_cast<void**>(&ptr), size));
+    // Use cudaMallocManaged instead of cudaMalloc for unified memory access across GPUs
+    checkCudaError(cudaMallocManaged(reinterpret_cast<void**>(&ptr), size, cudaMemAttachGlobal));
   } else {
     ptr = pool_[size].back();
     pool_[size].pop_back();

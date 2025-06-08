@@ -6,6 +6,8 @@ add_library(cudautil STATIC
     gpubuffer.hpp
     gpumemorypool.cu
     gpumemorypool.hpp
+    deviceutils.cu
+    deviceutils.hpp
 )
 
 target_include_directories(cudautil PRIVATE ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
