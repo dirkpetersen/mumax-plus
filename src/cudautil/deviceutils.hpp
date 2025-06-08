@@ -2,6 +2,7 @@
 
 #include <cuda_runtime.h>
 #include <vector>
+#include <iostream>
 #include "cudaerror.hpp"
 
 /**
@@ -29,15 +30,29 @@ inline int getIdleGPUCount() {
     int deviceCount = getDeviceCount();
     int idleCount = 0;
     
+    // Store original device to restore later
+    int originalDevice;
+    checkCudaError(cudaGetDevice(&originalDevice));
+    
     for (int i = 0; i < deviceCount; i++) {
-        cudaDeviceProp prop;
-        checkCudaError(cudaGetDeviceProperties(&prop, i));
-        
-        // A very basic idle check - in a production system you would
-        // want to use the CUDA management API or NVML to get actual utilization
-        // For now, we just count all detected devices as potentially idle
-        idleCount++;
+        try {
+            cudaDeviceProp prop;
+            checkCudaError(cudaGetDeviceProperties(&prop, i));
+            
+            // Check if device is accessible
+            checkCudaError(cudaSetDevice(i));
+            
+            // A basic check - we assume all accessible devices are potentially usable
+            // In production, you would use NVML or similar to check actual utilization
+            idleCount++;
+        } catch (const std::exception& e) {
+            // Device not accessible, skip it
+            continue;
+        }
     }
+    
+    // Restore original device
+    checkCudaError(cudaSetDevice(originalDevice));
     
     return idleCount;
 }
@@ -72,6 +87,10 @@ inline void enablePeerAccess() {
         return; // Nothing to do
     }
     
+    // Store original device to restore later
+    int originalDevice;
+    checkCudaError(cudaGetDevice(&originalDevice));
+    
     for (int i = 0; i < deviceCount; i++) {
         checkCudaError(cudaSetDevice(i));
         for (int j = 0; j < deviceCount; j++) {
@@ -79,11 +98,20 @@ inline void enablePeerAccess() {
                 int canAccessPeer = 0;
                 cudaError_t err = cudaDeviceCanAccessPeer(&canAccessPeer, i, j);
                 if (err == cudaSuccess && canAccessPeer) {
-                    cudaDeviceEnablePeerAccess(j, 0);
+                    // Check if peer access is already enabled
+                    cudaError_t enableErr = cudaDeviceEnablePeerAccess(j, 0);
+                    if (enableErr != cudaSuccess && enableErr != cudaErrorPeerAccessAlreadyEnabled) {
+                        // Log warning but don't fail - peer access is optional optimization
+                        std::cerr << "Warning: Failed to enable peer access from device " 
+                                  << i << " to device " << j << std::endl;
+                    }
                 }
             }
         }
     }
+    
+    // Restore original device
+    checkCudaError(cudaSetDevice(originalDevice));
 }
 
 } // namespace DeviceUtils
