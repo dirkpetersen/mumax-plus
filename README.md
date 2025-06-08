@@ -100,6 +100,45 @@ make html
 ```
 The documentation can now be found at `docs/_build/html/index.html`.
 
+## Multi-GPU Support
+
+mumax⁺ includes support for multi-GPU acceleration using CUDA's cuFFT library for stray field calculations. This feature automatically detects available GPUs and can provide significant performance improvements for large simulations.
+
+### Requirements
+- Multiple CUDA-compatible GPUs
+- CUDA Toolkit with cuFFT library
+- GPUs with peer-to-peer access support (recommended)
+
+### Usage
+Multi-GPU support is enabled automatically when multiple GPUs are detected. The system will:
+- Automatically detect available GPUs
+- Enable peer-to-peer memory access between GPUs
+- Use CUDA managed memory for efficient multi-GPU operations
+- Fall back gracefully to single-GPU mode if multi-GPU setup fails
+
+### Benchmarking Multi-GPU Performance
+Use the provided benchmark script to test multi-GPU performance:
+```bash
+python examples/multi_gpu_fft_test.py
+```
+
+This script compares single-GPU vs multi-GPU performance across different grid sizes and provides detailed timing information.
+
+### Performance Considerations
+- Multi-GPU acceleration is most effective for large simulations (grid sizes > 128³)
+- Performance gains depend on GPU memory bandwidth and peer-to-peer connectivity
+- Optimal performance requires GPUs of similar compute capability
+- Memory usage increases due to CUDA managed memory allocation
+
+### Troubleshooting Multi-GPU Issues
+If multi-GPU mode fails to initialize, the system automatically falls back to single-GPU mode. Common issues include:
+- **Insufficient GPU memory**: Reduce simulation size or use fewer GPUs
+- **Driver compatibility**: Ensure CUDA drivers support multi-GPU operations
+- **Peer access limitations**: Some GPU configurations don't support peer-to-peer access
+- **Mixed GPU architectures**: Performance may be limited by the slowest GPU
+
+Check the console output for detailed error messages and fallback notifications.
+
 ## Examples
 
 Lots of example codes are located in the `examples/` directory. They are either simple Python scripts, which can be executed inside said directory like any Python script
@@ -107,6 +146,10 @@ Lots of example codes are located in the `examples/` directory. They are either 
 python standardproblem4.py
 ```
 or they are interactive notebooks (`.ipynb` files), which can be run using Jupyter.
+
+### Multi-GPU Examples
+- `multi_gpu_fft_test.py` - Benchmark multi-GPU FFT performance for stray field calculations
+- `managed_memory_test.py` - Demonstrate CUDA managed memory usage across multiple GPUs
 
 ## Testing
 
