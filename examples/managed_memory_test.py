@@ -29,8 +29,8 @@ def run_benchmark(grid_size, repeat=3):
     magnet.aex = 13e-12  # J/m
     magnet.alpha = 0.02
     
-    # Create a random magnetization pattern
-    magnet.magnetization.set_random()
+    # Create a magnetization pattern
+    magnet.magnetization = (0.7, 0.7, 0.0)
     
     # Run the simulation
     dt = 1e-12  # 1 ps

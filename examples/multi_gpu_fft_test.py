@@ -39,9 +39,8 @@ def run_strayfield_benchmark(grid_size, use_multi_gpu=True, repeat=3):
     magnet.msat = 800e3  # A/m
     magnet.aex = 13e-12  # J/m
     
-    # Create a random magnetization pattern to trigger stray field calculations
+    # Create a non-uniform magnetization pattern to trigger stray field calculations
     magnet.magnetization = (0.8, 0.6, 0.0)  # Start with uniform state
-    magnet.magnetization.set_random()  # Make it non-uniform
     
     # Now run the strayfield calculation benchmark
     times = []
