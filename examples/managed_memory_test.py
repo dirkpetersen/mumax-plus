@@ -41,7 +41,7 @@ def run_benchmark(grid_size, repeat=3):
         start_time = time.time()
         # Force multiple energy calculations to exercise the memory system
         for _ in range(100):
-            total_energy = magnet.total_energy()
+            total_energy = magnet.total_energy.eval()
         end_time = time.time()
         times.append(end_time - start_time)
         print(f"  Run {i+1}: {times[-1]:.4f} seconds")

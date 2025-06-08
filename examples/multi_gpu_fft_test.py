@@ -48,10 +48,7 @@ def run_strayfield_benchmark(grid_size, use_multi_gpu=True, repeat=3):
         start_time = time.time()
         
         # Force calculation of the demag field (this triggers the FFT calculation)
-        energy = magnet.demag_energy()
-        
-        # Get the actual energy value to ensure calculation is completed
-        energy_val = energy()
+        energy_val = magnet.demag_energy.eval()
         
         end_time = time.time()
         elapsed = end_time - start_time
