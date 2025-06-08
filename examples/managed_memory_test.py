@@ -6,6 +6,7 @@ This example utilizes the CUDA Managed Memory allocator.
 
 import numpy as np
 import mumaxplus as mp
+from mumaxplus import Ferromagnet, Grid, World
 import time
 
 def print_separator():
@@ -17,30 +18,30 @@ def run_benchmark(grid_size, repeat=3):
     print(f"Benchmarking with grid size: {grid_size}")
     
     # Create a world with the specified grid size
-    world = mp.MumaxWorld()
-    grid = mp.Grid(world, grid_size[0], grid_size[1], grid_size[2])
+    world = World(cellsize=(5e-9, 5e-9, 5e-9))
+    grid = Grid(grid_size)
     
     # Create a ferromagnet with the grid
-    magnet = mp.Ferromagnet(world, grid)
+    magnet = Ferromagnet(world, grid)
     
     # Set material parameters
-    magnet.msat.setUniformValue(800e3)  # A/m
-    magnet.aex.setUniformValue(13e-12)  # J/m
+    magnet.msat = 800e3  # A/m
+    magnet.aex = 13e-12  # J/m
+    magnet.alpha = 0.02
     
-    # Create a Ferromagnet with standard parameters
-    magnet.magnetization().randomize()
-    
-    # Create a time solver
-    solver = mp.TimeSolver(world)
+    # Create a random magnetization pattern
+    magnet.magnetization.set_random()
     
     # Run the simulation
     dt = 1e-12  # 1 ps
     
-    # Time the execution
+    # Time the execution - measure energy calculations which trigger stray field computation
     times = []
     for i in range(repeat):
         start_time = time.time()
-        solver.step(magnet, 1000 * dt)  # Run for 1000 steps
+        # Force multiple energy calculations to exercise the memory system
+        for _ in range(100):
+            total_energy = magnet.total_energy()
         end_time = time.time()
         times.append(end_time - start_time)
         print(f"  Run {i+1}: {times[-1]:.4f} seconds")
@@ -50,9 +51,6 @@ def run_benchmark(grid_size, repeat=3):
     return avg_time
 
 def main():
-    # Print information about GPUs
-    world = mp.MumaxWorld()
-    
     print("Starting multi-GPU benchmark with managed memory:")
     print_separator()
     

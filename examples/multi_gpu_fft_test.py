@@ -7,8 +7,8 @@ for stray field calculations using cuFFT.
 
 import time
 import numpy as np
-import matplotlib.pyplot as plt
 import mumaxplus as mp
+from mumaxplus import Ferromagnet, Grid, World
 
 def print_separator():
     print('=' * 60)
@@ -28,59 +28,31 @@ def run_strayfield_benchmark(grid_size, use_multi_gpu=True, repeat=3):
     print(f"Running strayfield benchmark with grid size {grid_size}")
     print(f"Multi-GPU mode: {'Enabled' if use_multi_gpu else 'Disabled'}")
     
-    # Create a world and grid
-    world = mp.MumaxWorld()
-    grid = mp.Grid(world, grid_size[0], grid_size[1], grid_size[2])
+    # Create a world and grid  
+    world = World(cellsize=(5e-9, 5e-9, 5e-9))
+    grid = Grid(grid_size)
     
     # Create a ferromagnet with the grid
-    magnet = mp.Ferromagnet(world, grid)
+    magnet = Ferromagnet(world, grid)
     
     # Set material parameters
-    magnet.msat.setUniformValue(800e3)  # A/m
+    magnet.msat = 800e3  # A/m
+    magnet.aex = 13e-12  # J/m
     
-    # Create a non-uniform magnetization pattern (skyrmion-like)
-    mag = magnet.magnetization()
-    center_x = grid_size[0] / 2
-    center_y = grid_size[1] / 2
-    radius = min(grid_size[0], grid_size[1]) / 4
-    
-    # Set up the magnetization field with a circular pattern
-    for i in range(grid_size[0]):
-        for j in range(grid_size[1]):
-            for k in range(grid_size[2]):
-                # Calculate distance from center
-                dx = i - center_x
-                dy = j - center_y
-                r = np.sqrt(dx*dx + dy*dy)
-                
-                # Calculate angle for vortex
-                phi = np.arctan2(dy, dx)
-                
-                if r < radius:
-                    # Inside the skyrmion: magnetization points in different directions
-                    theta = np.pi * (1 - r/radius)  # Vary from π at center to 0 at edge
-                    mx = np.sin(theta) * np.cos(phi)
-                    my = np.sin(theta) * np.sin(phi)
-                    mz = np.cos(theta)
-                else:
-                    # Outside: uniform magnetization pointing up
-                    mx, my, mz = 0, 0, 1
-                
-                # Set the magnetization at this cell
-                mag.setComponentInCell(i, j, k, 0, mx)
-                mag.setComponentInCell(i, j, k, 1, my)
-                mag.setComponentInCell(i, j, k, 2, mz)
+    # Create a random magnetization pattern to trigger stray field calculations
+    magnet.magnetization = (0.8, 0.6, 0.0)  # Start with uniform state
+    magnet.magnetization.set_random()  # Make it non-uniform
     
     # Now run the strayfield calculation benchmark
     times = []
     for i in range(repeat):
         start_time = time.time()
         
-        # Explicitly calculate the strayfield (this triggers the FFT calculation)
-        h_demag = magnet.demagField()
+        # Force calculation of the demag field (this triggers the FFT calculation)
+        energy = magnet.demag_energy()
         
-        # We need to get the data to ensure the calculation is completed
-        h_data = h_demag.getData()
+        # Get the actual energy value to ensure calculation is completed
+        energy_val = energy()
         
         end_time = time.time()
         elapsed = end_time - start_time
